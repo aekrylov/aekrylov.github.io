@@ -7,7 +7,7 @@ export default function Home() {
         <div className="flex justify-center text-xl mt-8">
           <a href="https://github.com/aekrylov" target="_blank" className="text-blue-200 mx-2">Github</a>
           <a href="https://t.me/aekrylov" target="_blank" className="text-blue-200 mx-2">Telegram</a>
-          <a href="mailto:hi@aekrylov.me" target="_blank" className="text-blue-200 mx-2">Email</a>
+          <a href={'mailto:' + process.env.NEXT_PUBLIC_CONTACT_EMAIL} target="_blank" className="text-blue-200 mx-2">Email</a>
         </div>
       </div>
     </div>
