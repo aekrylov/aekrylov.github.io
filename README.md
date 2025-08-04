@@ -2,7 +2,7 @@
 
 👨‍💻 Backend JVM Engineer.
 
-💼 Working on enterprise stuff at Swiss Re.
+💼 Engineering marketing communications at Booking.com..
 
 📍 Currently in Amsterdam.
 
