@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YC Applications Guess Counter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    .title {
+      font-size: 1.5em;
+      margin-bottom: 20px;
+      font-weight: bold;
+    }
+    .popup-btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-size: 1.1em;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    .popup-btn:hover {
+      background: #2563eb;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 260px);
+      gap: 15px;
+      justify-content: center;
+    }
+    .counter-box {
+      background: white;
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .label {
+      font-size: 1.1em;
+      margin-bottom: 12px;
+    }
+    .button-row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    button {
+      flex: 1;
+      padding: 14px;
+      font-size: 1.2em;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+      color: white;
+      font-weight: bold;
+    }
+    .green { background: #22c55e; }
+    .green:hover { background: #16a34a; }
+    .red { background: #ef4444; }
+    .red:hover { background: #dc2626; }
+    .blue { background: #3b82f6; }
+    .blue:hover { background: #2563eb; }
+    .yellow { background: #facc15; color: black; }
+    .yellow:hover { background: #eab308; }
+    .minus {
+      background: #6b7280;
+      color: white;
+      max-width: 60px;
+      flex: none;
+    }
+    .minus:hover {
+      background: #4b5563;
+    }
+    .reset {
+      margin-top: 20px;
+      background: #374151;
+      padding: 12px 20px;
+    }
+    .reset:hover {
+      background: #1f2937;
+    }
+  </style>
+</head>
+<body>
+  <!-- Popup launcher -->
+  <button class="popup-btn" onclick="openGame()">Open YC PartnerSim Game</button>
+
+  <!-- Counter -->
+  <div class="container">
+    <div class="title">YC Applications Guess Counter</div>
+    <div class="grid">
+      <div class="counter-box">
+        <div class="label">Accepted & Guessed Right</div>
+        <div class="button-row">
+          <button id="btn1" class="green" onclick="increment(1)">0</button>
+          <button class="minus" onclick="decrement(1)">-1</button>
+        </div>
+      </div>
+      <div class="counter-box">
+        <div class="label">Accepted & Guessed Wrong</div>
+        <div class="button-row">
+          <button id="btn2" class="red" onclick="increment(2)">0</button>
+          <button class="minus" onclick="decrement(2)">-1</button>
+        </div>
+      </div>
+      <div class="counter-box">
+        <div class="label">Denied & Guessed Right</div>
+        <div class="button-row">
+          <button id="btn3" class="blue" onclick="increment(3)">0</button>
+          <button class="minus" onclick="decrement(3)">-1</button>
+        </div>
+      </div>
+      <div class="counter-box">
+        <div class="label">Denied & Guessed Wrong</div>
+        <div class="button-row">
+          <button id="btn4" class="yellow" onclick="increment(4)">0</button>
+          <button class="minus" onclick="decrement(4)">-1</button>
+        </div>
+      </div>
+    </div>
+    <button class="reset" onclick="resetAll()">Reset All</button>
+  </div>
+
+  <script>
+    let counts = [0, 0, 0, 0];
+
+    function openGame() {
+      window.open(
+        "https://ycarena.com/games/partnersim",
+        "PartnerSimGame",
+        "width=1024,height=768,resizable=yes,scrollbars=yes"
+      );
+    }
+
+    function increment(index) {
+      counts[index - 1]++;
+      document.getElementById('btn' + index).textContent = counts[index - 1];
+    }
+
+    function decrement(index) {
+      if (counts[index - 1] > 0) {
+        counts[index - 1]--;
+        document.getElementById('btn' + index).textContent = counts[index - 1];
+      }
+    }
+
+    function resetAll() {
+      counts = [0, 0, 0, 0];
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById('btn' + i).textContent = 0;
+      }
+    }
+  </script>
+</body>
+</html>
+
+
