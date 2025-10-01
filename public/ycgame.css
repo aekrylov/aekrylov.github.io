@@ -1,0 +1,159 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #f3f4f6;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+
+.title {
+    font-size: 1.5em;
+    margin-bottom: 20px;
+    font-weight: bold;
+}
+
+.popup-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-size: 1.1em;
+    cursor: pointer;
+    margin-bottom: 20px;
+}
+
+.popup-btn:hover {
+    background: #2563eb;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, 260px);
+    gap: 15px;
+    justify-content: center;
+}
+
+.counter-box {
+    background: white;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.label {
+    font-size: 1.1em;
+    margin-bottom: 12px;
+}
+
+.button-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+button {
+    flex: 1;
+    padding: 14px;
+    font-size: 1.2em;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+    color: white;
+    font-weight: bold;
+}
+
+.green { background: #22c55e; }
+.green:hover { background: #16a34a; }
+
+.red { background: #ef4444; }
+.red:hover { background: #dc2626; }
+
+.blue { background: #3b82f6; }
+.blue:hover { background: #2563eb; }
+
+.yellow { background: #facc15; color: black; }
+.yellow:hover { background: #eab308; }
+
+.minus {
+    background: #6b7280;
+    color: white;
+    max-width: 60px;
+    flex: none;
+}
+
+.minus:hover { background: #4b5563; }
+
+.reset {
+    margin-top: 20px;
+    background: #374151;
+    padding: 12px 20px;
+}
+
+.reset:hover { background: #1f2937; }
+
+.save-section {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.save-section input {
+    padding: 8px;
+    font-size: 1em;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+}
+
+.save-section button {
+    background: #10b981;
+    color: white;
+    border-radius: 8px;
+    padding: 10px 20px;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.save-section button:hover {
+    background: #059669;
+}
+
+.leaderboard {
+    margin-top: 30px;
+    width: 100%;
+    max-width: 600px;
+    background: white;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.leaderboard h2 {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.leaderboard ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.leaderboard li {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    font-weight: bold;
+}
+
+.leaderboard li:last-child {
+    border-bottom: none;
+}
+

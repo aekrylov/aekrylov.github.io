@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YC Applications Guess Counter with Leaderboard</title>
+  <link rel="stylesheet" href="ycgame.css">
+</head>
+<body>
+  <div class="title">YC Applications Guess Counter</div>
+  <button class="popup-btn" onclick="openGame()">Open YC PartnerSim Game</button>
+
+  <div class="grid">
+    <div class="counter-box">
+      <div class="label">Accepted & Guessed Right</div>
+      <div class="button-row">
+        <button id="btn1" class="green" onclick="increment(1)">0</button>
+        <button class="minus" onclick="decrement(1)">-1</button>
+      </div>
+    </div>
+    <div class="counter-box">
+      <div class="label">Accepted & Guessed Wrong</div>
+      <div class="button-row">
+        <button id="btn2" class="red" onclick="increment(2)">0</button>
+        <button class="minus" onclick="decrement(2)">-1</button>
+      </div>
+    </div>
+    <div class="counter-box">
+      <div class="label">Denied & Guessed Right</div>
+      <div class="button-row">
+        <button id="btn3" class="blue" onclick="increment(3)">0</button>
+        <button class="minus" onclick="decrement(3)">-1</button>
+      </div>
+    </div>
+    <div class="counter-box">
+      <div class="label">Denied & Guessed Wrong</div>
+      <div class="button-row">
+        <button id="btn4" class="yellow" onclick="increment(4)">0</button>
+        <button class="minus" onclick="decrement(4)">-1</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="reset" onclick="resetAll()">Reset All</button>
+
+  <div class="save-section">
+    <input type="text" id="username" placeholder="Enter your name" />
+    <button onclick="saveScore()">Save Score</button>
+    <div id="saveStatus"></div>
+  </div>
+
+  <div class="leaderboard">
+    <h2>Leaderboard</h2>
+    <ul id="leaderboardList"></ul>
+  </div>
+
+  <!-- Firebase Modular SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
+    import { getFirestore, doc, setDoc, collection, query, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDmQbm1DZo-WLq27CzrwhqooUoVScI3agY",
+      authDomain: "ycpartnergame.firebaseapp.com",
+      projectId: "ycpartnergame",
+      storageBucket: "ycpartnergame.firebasestorage.app",
+      messagingSenderId: "540431710261",
+      appId: "1:540431710261:web:52e5da4f5e97686995997c",
+      measurementId: "G-VGY26KQDG7"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getFirestore(app);
+
+    // --- Counter ---
+    let counts = [0,0,0,0];
+    window.increment = i => { counts[i-1]++; updateBtn(i); }
+    window.decrement = i => { if(counts[i-1]>0){ counts[i-1]--; updateBtn(i); } }
+    const updateBtn = i => { document.getElementById('btn'+i).textContent = counts[i-1]; }
+    window.resetAll = () => { counts=[0,0,0,0]; for(let i=1;i<=4;i++) updateBtn(i); }
+    window.openGame = () => { window.open("https://ycarena.com/games/partnersim","PartnerSimGame","width=1024,height=768,resizable=yes,scrollbars=yes"); }
+
+    // --- Save Score ---
+    window.saveScore = async () => {
+      const username = document.getElementById('username').value.trim();
+      if(!username){ alert("Enter your name"); return; }
+      const score = counts[0]-counts[1]+counts[2]-counts[3];
+      try {
+        await setDoc(doc(db, "scores", username), {
+          acceptedRight: counts[0],
+          acceptedWrong: counts[1],
+          deniedRight: counts[2],
+          deniedWrong: counts[3],
+          totalScore: score,
+          timestamp: serverTimestamp()
+        });
+        document.getElementById('saveStatus').textContent = "Score saved!";
+      } catch(e){
+        console.error(e);
+        document.getElementById('saveStatus').textContent = "Error saving score";
+      }
+    };
+
+    // --- Leaderboard ---
+    const leaderboardList = document.getElementById('leaderboardList');
+    const q = query(collection(db, "scores"), orderBy("totalScore","desc"), limit(10));
+    onSnapshot(q, snapshot=>{
+      leaderboardList.innerHTML="";
+      snapshot.forEach(docSnap=>{
+        const data = docSnap.data();
+        const li = document.createElement("li");
+        li.textContent = docSnap.id;
+        const span = document.createElement("span");
+        span.textContent = data.totalScore;
+        li.appendChild(span);
+        leaderboardList.appendChild(li);
+      });
+    });
+  </script>
+</body>
+</html>
+
+
