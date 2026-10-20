@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trilaterate</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70;
+    --line: #e3e3e0; --accent: #d7263d; --accent-soft: #fdecee; --warn: #e07a00;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  #panel {
+    width: 360px; flex: none; height: 100%; overflow-y: auto; background: var(--panel);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column;
+  }
+  #map { flex: 1; height: 100%; }
+  #map.adding.leaflet-grab { cursor: crosshair; }
+  header { padding: 16px 16px 8px; }
+  h1 { font-size: 18px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .hint { color: var(--muted); margin: 0; font-size: 13px; }
+  .toolbar, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; }
+  .toolbar label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .toolbar .grow { flex: 1; }
+  button, select {
+    font: inherit; border: 1px solid var(--line); background: #fff; border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; color: var(--ink);
+  }
+  button:hover, select:hover { border-color: #bdbdb8; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #list { padding: 4px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; margin: 0; }
+  .item { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+  .item.off { opacity: .5; }
+  .item .top { display: flex; gap: 6px; align-items: center; }
+  .item .name { flex: 1; font-weight: 600; border: 0; padding: 2px 0; background: transparent; min-width: 0; }
+  .item .name:focus { outline: none; border-bottom: 1px solid var(--line); }
+  .item .icon { border: 0; background: transparent; padding: 2px 6px; color: var(--muted); font-size: 15px; }
+  .item .icon:hover { color: var(--ink); }
+  .item input[type=text], .item input[type=number] {
+    font: inherit; width: 100%; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; min-width: 0;
+  }
+  .item input.bad { border-color: var(--accent); background: var(--accent-soft); }
+  .item .range { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; }
+  .item label.f { display: grid; gap: 2px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .item .u { color: var(--muted); padding-bottom: 5px; }
+  #result { margin: 8px 16px 16px; padding: 12px; border-radius: 8px; background: var(--bg); }
+  #result h2 { font-size: 14px; margin: 0 0 8px; }
+  #result p { margin: 0 0 6px; }
+  .cand { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-top: 6px; display: grid; gap: 4px; }
+  .cand .coords { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .cand .meta { color: var(--muted); font-size: 12px; }
+  .cand .btns { display: flex; gap: 6px; }
+  .cand .btns button { padding: 2px 8px; font-size: 12px; }
+  .miss { color: var(--warn); }
+  .spacer { flex: 1; }
+  footer { padding: 8px 16px 14px; color: var(--muted); font-size: 12px; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff;
+    padding: 8px 14px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 2000;
+  }
+  #toast.show { opacity: .92; }
+
+  /* map icons */
+  .dot { width: 14px; height: 14px; margin: 1px; border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+  .handle { width: 10px; height: 10px; margin: 3px; background: #fff; border: 2px solid var(--c); box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+  .handle.min { border-radius: 50%; }
+  .target { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--c); background: rgba(255,255,255,.7); position: relative; }
+  .target::before, .target::after { content: ""; position: absolute; background: var(--c); }
+  .target::before { left: 9px; top: -6px; width: 2px; height: 30px; }
+  .target::after { top: 9px; left: -6px; height: 2px; width: 30px; }
+  .lbl { position: absolute; left: 26px; top: 0; font: 700 12px system-ui, sans-serif; color: var(--c); text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
+
+  @media (max-width: 760px) {
+    body { flex-direction: column-reverse; }
+    #panel { width: 100%; height: 45%; border-right: 0; border-top: 1px solid var(--line); }
+    #map { height: 55%; flex: none; }
+  }
+</style>
+</head>
+<body>
+<aside id="panel">
+  <header>
+    <h1>Trilaterate</h1>
+    <p class="hint">Click the map where you measured from, then enter the min–max distance to the target.
+      Every extra measurement narrows the <b style="color:var(--accent)">red area</b> where the target can be.
+      Drag dots to move, drag ■ / ● handles to set max / min distance.</p>
+  </header>
+  <div class="toolbar">
+    <label><input type="checkbox" id="addOnClick" checked> Add on map click</label>
+    <span class="grow"></span>
+    <label>Units
+      <select id="unit">
+        <option value="m">m</option>
+        <option value="km">km</option>
+        <option value="mi">mi</option>
+      </select>
+    </label>
+  </div>
+  <div id="list"></div>
+  <div class="actions">
+    <button id="addCenter">+ Add at map center</button>
+    <span class="spacer"></span>
+    <button id="fit" title="Zoom to all measurements">Fit</button>
+    <button id="share" title="Copy a link that contains all measurements">Copy link</button>
+    <button id="clear">Clear</button>
+  </div>
+  <section id="result"></section>
+  <footer>Distances are geodesic (WGS‑84 sphere). Data is saved in this browser.</footer>
+</aside>
+<div id="map" class="adding"></div>
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+<script>
+(() => {
+  const COLORS = ['#2f6fdb', '#1a9e5c', '#e07a00', '#8e44ad', '#0aa2b5', '#c2185b', '#6d4c41', '#5c6bc0'];
+  const UNITS = { m: 1, km: 1000, mi: 1609.344 };
+  const STEPS = 180;              // polygon vertices per circle
+  const STORE_KEY = 'trilaterate.v1';
+
+  const $ = (s) => document.querySelector(s);
+  const listEl = $('#list'), resultEl = $('#result'), mapEl = $('#map');
+
+  let state = { unit: 'km', items: [] };
+  let nextId = 1, colorIdx = 0;
+
+  // ---------- geometry helpers (points are {lat, lng}, distances in meters) ----------
+  const ll = (p) => [p.lng, p.lat];
+  const distM = (a, b) => turf.distance(ll(a), ll(b), { units: 'kilometers' }) * 1000;
+  const bearingTo = (a, b) => turf.bearing(ll(a), ll(b));
+  const dest = (p, m, brg) => {
+    const c = turf.destination(ll(p), m / 1000, brg, { units: 'kilometers' }).geometry.coordinates;
+    return { lat: c[1], lng: c[0] };
+  };
+  const ringOf = (it, r) => turf.circle(ll(it), r / 1000, { steps: STEPS, units: 'kilometers' }).geometry.coordinates[0];
+
+  // Region allowed by one measurement: a disk (min = 0) or an annulus.
+  function annulus(it) {
+    const outer = ringOf(it, it.max);
+    if (it.min > 0 && it.min < it.max) return turf.polygon([outer, ringOf(it, it.min).slice().reverse()]);
+    return turf.polygon([outer]);
+  }
+
+  // ---------- formatting ----------
+  const k = () => UNITS[state.unit];
+  const fmtNum = (m) => +(m / k()).toFixed(state.unit === 'm' ? 1 : 4);
+  const fmtCoord = (p) => `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
+  function fmtDist(m) {
+    if (state.unit === 'mi') return m < 160.9344 ? `${Math.round(m / 0.3048)} ft` : `${(m / 1609.344).toFixed(2)} mi`;
+    if (state.unit === 'km' && m >= 1000) return `${(m / 1000).toFixed(m >= 1e5 ? 0 : 2)} km`;
+    return `${m < 10 ? m.toFixed(1) : Math.round(m)} m`;
+  }
+  function fmtArea(m2) {
+    if (state.unit === 'mi') return m2 < 2.59e5 ? `${Math.round(m2 / 4046.86)} acres` : `${(m2 / 2.59e6).toFixed(2)} mi²`;
+    return m2 < 1e6 ? `${Math.round(m2).toLocaleString()} m²` : `${(m2 / 1e6).toFixed(2)} km²`;
+  }
+  const nice = (x) => { const p = Math.pow(10, Math.floor(Math.log10(x)) - 1); return Math.round(x / p) * p; };
+  function parseCoord(s) {
+    const m = s.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)$/);
+    if (!m) return null;
+    const lat = +m[1], lng = +m[2];
+    return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+  }
+
+  // ---------- map ----------
+  const map = L.map('map', { worldCopyJump: true }).setView([30, 10], 3);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
+
+  const regionLayer = L.layerGroup().addTo(map);
+  const layers = new Map(); // id -> { ring, center, hMax, hMin }
+  const fields = new Map(); // id -> { el, coord, min, max }
+
+  const icon = (cls, color, label = '') => L.divIcon({
+    className: '',
+    html: `<div class="${cls}" style="--c:${color}">${label ? `<span class="lbl">${label}</span>` : ''}</div>`,
+    iconSize: cls === 'target' ? [22, 22] : [16, 16],
+    iconAnchor: cls === 'target' ? [11, 11] : [8, 8],
+  });
+
+  function ensureLayer(it) {
+    let l = layers.get(it.id);
+    if (l) return l;
+    const ring = L.geoJSON(null, { interactive: false }).addTo(map);
+    const center = L.marker([it.lat, it.lng], { draggable: true, icon: icon('dot', it.color), zIndexOffset: 1000, title: it.name }).addTo(map);
+    const hMax = L.marker([0, 0], { draggable: true, icon: icon('handle', it.color), zIndexOffset: 500, title: 'Max distance' }).addTo(map);
+    const hMin = L.marker([0, 0], { draggable: true, icon: icon('handle min', it.color), zIndexOffset: 0, title: 'Min distance' }).addTo(map);
+
+    center.on('drag', (e) => { const p = e.target.getLatLng(); it.lat = p.lat; it.lng = p.lng; refreshItem(it, 'center'); });
+    hMax.on('drag', (e) => {
+      const p = e.target.getLatLng();
+      it.max = Math.max(distM(it, p), it.min, 1);
+      it.bMax = bearingTo(it, p);
+      refreshItem(it, 'hMax');
+    });
+    hMin.on('drag', (e) => {
+      const p = e.target.getLatLng();
+      it.min = Math.min(distM(it, p), it.max);
+      it.bMin = bearingTo(it, p);
+      refreshItem(it, 'hMin');
+    });
+    [center, hMax, hMin].forEach((m) => m.on('dragend', () => refreshItem(it)));
+
+    l = { ring, center, hMax, hMin };
+    layers.set(it.id, l);
+    return l;
+  }
+
+  function removeLayer(id) {
+    const l = layers.get(id);
+    if (!l) return;
+    Object.values(l).forEach((x) => map.removeLayer(x));
+    layers.delete(id);
+  }
+
+  // Redraw one measurement on the map and in the sidebar. `except` names the marker being dragged.
+  function refreshItem(it, except) {
+    const l = ensureLayer(it);
+    l.ring.clearLayers();
+    l.ring.options.style = {
+      color: it.color, weight: 2, opacity: it.on ? 0.9 : 0.35, dashArray: it.on ? null : '4 6',
+      fillColor: it.color, fillOpacity: it.on ? 0.07 : 0,
+    };
+    if (it.max > 0) l.ring.addData(annulus(it));
+    if (except !== 'center') l.center.setLatLng([it.lat, it.lng]);
+    if (except !== 'hMax') l.hMax.setLatLng(ll(dest(it, it.max, it.bMax)).reverse());
+    if (except !== 'hMin') l.hMin.setLatLng(ll(dest(it, it.min, it.bMin)).reverse());
+    syncFields(it);
+    scheduleCompute();
+  }
+
+  function syncFields(it) {
+    const f = fields.get(it.id);
+    if (!f) return;
+    const active = document.activeElement;
+    if (active !== f.coord) { f.coord.value = fmtCoord(it); f.coord.classList.remove('bad'); }
+    if (active !== f.min && active !== f.max) {
+      f.min.value = fmtNum(it.min); f.max.value = fmtNum(it.max);
+      f.min.classList.remove('bad'); f.max.classList.remove('bad');
+    }
+    f.el.classList.toggle('off', !it.on);
+  }
+
+  // ---------- sidebar ----------
+  function renderList() {
+    listEl.innerHTML = '';
+    fields.clear();
+    if (!state.items.length) {
+      listEl.innerHTML = '<p class="empty">No measurements yet. Click the map at a spot you know the distance from, or add one by coordinates.</p>';
+      return;
+    }
+    for (const it of state.items) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.style.setProperty('--c', it.color);
+      el.innerHTML = `
+        <div class="top">
+          <input class="name" type="text" aria-label="Name">
+          <button class="icon" data-a="zoom" title="Zoom to">⌖</button>
+          <button class="icon" data-a="toggle" title="Include / exclude">${it.on ? '◉' : '○'}</button>
+          <button class="icon" data-a="del" title="Delete">✕</button>
+        </div>
+        <label class="f">Location (lat, lng)<input class="coord" type="text" spellcheck="false"></label>
+        <div class="range">
+          <label class="f">Min distance<input class="min" type="number" min="0" step="any"></label>
+          <label class="f">Max distance<input class="max" type="number" min="0" step="any"></label>
+          <span class="u">${state.unit}</span>
+        </div>`;
+      const name = el.querySelector('.name'), coord = el.querySelector('.coord');
+      const min = el.querySelector('.min'), max = el.querySelector('.max');
+      name.value = it.name;
+      name.addEventListener('input', () => { it.name = name.value; save(); });
+
+      coord.addEventListener('input', () => {
+        const p = parseCoord(coord.value);
+        coord.classList.toggle('bad', !p);
+        if (p) { it.lat = p.lat; it.lng = p.lng; refreshItem(it); }
+      });
+      coord.addEventListener('change', () => syncFields(it));
+
+      const onRange = () => {
+        const mn = min.value.trim() === '' ? 0 : parseFloat(min.value);
+        const mx = parseFloat(max.value);
+        const ok = isFinite(mx) && mx > 0 && isFinite(mn) && mn >= 0 && mn <= mx;
+        min.classList.toggle('bad', !ok); max.classList.toggle('bad', !ok);
+        if (ok) { it.min = mn * k(); it.max = mx * k(); refreshItem(it); }
+      };
+      min.addEventListener('input', onRange); max.addEventListener('input', onRange);
+      [min, max].forEach((x) => x.addEventListener('change', () => syncFields(it)));
+
+      el.addEventListener('click', (e) => {
+        const a = e.target.closest('button')?.dataset.a;
+        if (a === 'del') { state.items = state.items.filter((x) => x !== it); removeLayer(it.id); renderList(); scheduleCompute(); }
+        if (a === 'toggle') { it.on = !it.on; renderList(); refreshItem(it); }
+        if (a === 'zoom') map.fitBounds(layers.get(it.id).ring.getBounds(), { padding: [30, 30] });
+      });
+
+      fields.set(it.id, { el, coord, min, max });
+      listEl.appendChild(el);
+      syncFields(it);
+    }
+  }
+
+  function addItem(p, opts = {}) {
+    // Default range: roughly a third of the visible map width, so the circle is easy to grab.
+    const b = map.getBounds();
+    const span = distM({ lat: p.lat, lng: b.getWest() }, { lat: p.lat, lng: b.getEast() });
+    const r = nice(Math.max(span * 0.15, 20));
+    const it = {
+      id: nextId++, name: opts.name || `Point ${state.items.length + 1}`,
+      lat: p.lat, lng: p.lng, min: opts.min ?? r * 0.8, max: opts.max ?? r * 1.2,
+      on: opts.on ?? true, color: opts.color || COLORS[colorIdx++ % COLORS.length], bMax: 90, bMin: 90,
+    };
+    state.items.push(it);
+    renderList();
+    refreshItem(it);
+    return it;
+  }
+
+  // ---------- solving ----------
+  let pending = false;
+  function scheduleCompute() {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; compute(); save(); });
+  }
+
+  const miss = (p, it) => { const d = distM(p, it); return d < it.min ? it.min - d : d > it.max ? d - it.max : 0; };
+
+  // When the ranges don't overlap: find the point that violates them the least (sum of squared misses).
+  function bestFit(items) {
+    const f = (p) => items.reduce((s, it) => s + miss(p, it) ** 2, 0);
+    const mean = { lat: items.reduce((s, i) => s + i.lat, 0) / items.length, lng: items.reduce((s, i) => s + i.lng, 0) / items.length };
+    const seeds = [mean, ...items.map((i) => dest(i, (i.min + i.max) / 2, bearingTo(i, mean)))];
+    let best = null, bestV = Infinity;
+    for (let p of seeds) {
+      let v = f(p), step = Math.max(...items.map((i) => i.max));
+      while (step > 0.05) {
+        let moved = false;
+        for (let brg = 0; brg < 360; brg += 45) {
+          const q = dest(p, step, brg), w = f(q);
+          if (w < v) { p = q; v = w; moved = true; }
+        }
+        if (!moved) step /= 2;
+      }
+      if (v < bestV) { best = p; bestV = v; }
+    }
+    return best;
+  }
+
+  function lobes(feature) {
+    const g = feature.geometry;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    return polys.map((c) => turf.polygon(c)).filter((p) => turf.area(p) > 0.01);
+  }
+
+  let candidates = [];
+  function compute() {
+    regionLayer.clearLayers();
+    candidates = [];
+    const act = state.items.filter((i) => i.on && i.max > 0);
+
+    if (!act.length) {
+      resultEl.innerHTML = '<h2>Result</h2><p class="hint">Add measurements to locate the target.</p>';
+      return;
+    }
+
+    let region = annulus(act[0]);
+    for (let i = 1; i < act.length && region; i++) {
+      try { region = turf.intersect(region, annulus(act[i])); } catch (e) { console.error(e); region = null; }
+    }
+    const parts = region ? lobes(region) : [];
+
+    if (act.length === 1) {
+      resultEl.innerHTML = `<h2>Result</h2><p>The target is somewhere on the ${act[0].min > 0 ? 'ring' : 'disk'} around <b>${esc(act[0].name)}</b>.</p>
+        <p class="hint">Add a measurement from another spot to narrow it down.</p>`;
+      return;
+    }
+
+    if (!parts.length) {
+      const p = bestFit(act);
+      const misses = act.map((it) => ({ it, m: miss(p, it) })).filter((x) => x.m > 0.5);
+      candidates = [{ lat: p.lat, lng: p.lng, radius: 0 }];
+      L.marker([p.lat, p.lng], { icon: icon('target', 'var(--warn)', '?') })
+        .bindPopup(`Closest compromise<br><code>${fmtCoord(p)}</code>`).addTo(regionLayer);
+      resultEl.innerHTML = `<h2 class="miss">No consistent location</h2>
+        <p>These ranges don't all overlap. Point closest to satisfying all of them:</p>
+        ${candHtml(0, 'Compromise', p, `misses: ${misses.map((x) => `${esc(x.it.name)} by ${fmtDist(x.m)}`).join(', ') || 'none'}`)}
+        <p class="hint" style="margin-top:8px">Widen a range or exclude a suspicious measurement (◉).</p>`;
+      return;
+    }
+
+    L.geoJSON(region, {
+      interactive: false,
+      style: { color: '#d7263d', weight: 2, fillColor: '#d7263d', fillOpacity: 0.35 },
+    }).addTo(regionLayer);
+
+    const total = parts.reduce((s, p) => s + turf.area(p), 0);
+    candidates = parts.map((poly) => {
+      let pt = turf.centerOfMass(poly);
+      if (!turf.booleanPointInPolygon(pt, poly)) pt = turf.pointOnFeature(poly);
+      const [lng, lat] = pt.geometry.coordinates;
+      const c = { lat, lng };
+      const radius = Math.max(...poly.geometry.coordinates[0].map(([x, y]) => distM(c, { lat: y, lng: x })));
+      return { lat, lng, radius, area: turf.area(poly), poly };
+    }).sort((a, b) => b.area - a.area);
+
+    candidates.forEach((c, i) => {
+      const label = candidates.length > 1 ? String.fromCharCode(65 + i) : '';
+      L.marker([c.lat, c.lng], { icon: icon('target', '#d7263d', label) })
+        .bindPopup(`${label ? `Area ${label}<br>` : ''}<code>${fmtCoord(c)}</code><br>± ${fmtDist(c.radius)}`)
+        .addTo(regionLayer);
+    });
+
+    const head = candidates.length === 1
+      ? `<h2>Target located</h2>`
+      : `<h2>${candidates.length} possible areas</h2><p class="hint">Add a measurement from a different direction to pick one.</p>`;
+    resultEl.innerHTML = head + candidates.map((c, i) => candHtml(i,
+      candidates.length > 1 ? `Area ${String.fromCharCode(65 + i)} · ${Math.round(100 * c.area / total)}% of total` : 'Best estimate',
+      c, `± ${fmtDist(c.radius)} · area ${fmtArea(c.area)}`)).join('');
+  }
+
+  const esc = (s) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
+  const candHtml = (i, title, p, meta) => `
+    <div class="cand">
+      <b>${title}</b>
+      <span class="coords">${fmtCoord(p)}</span>
+      <span class="meta">${meta}</span>
+      <div class="btns">
+        <button data-zoom="${i}">Zoom</button>
+        <button data-copy="${i}">Copy coords</button>
+        <a href="https://www.openstreetmap.org/?mlat=${p.lat.toFixed(6)}&mlon=${p.lng.toFixed(6)}#map=17/${p.lat.toFixed(6)}/${p.lng.toFixed(6)}" target="_blank" rel="noopener"><button>Open in OSM</button></a>
+      </div>
+    </div>`;
+
+  resultEl.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const c = candidates[b.dataset.zoom ?? b.dataset.copy];
+    if (!c) return;
+    if (b.dataset.zoom !== undefined) {
+      if (c.poly) map.fitBounds(L.geoJSON(c.poly).getBounds(), { padding: [40, 40], maxZoom: 18 });
+      else map.setView([c.lat, c.lng], Math.max(map.getZoom(), 14));
+    } else copy(fmtCoord(c), 'Coordinates copied');
+  });
+
+  // ---------- persistence & sharing ----------
+  const serialize = () => ({
+    unit: state.unit,
+    items: state.items.map(({ name, lat, lng, min, max, on, color }) => ({ name, lat, lng, min, max, on, color })),
+  });
+  let saveTimer;
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(serialize())); } catch (e) {} }, 300);
+  }
+  function load() {
+    let data = null;
+    try {
+      const m = location.hash.match(/^#d=(.+)$/);
+      if (m) data = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    } catch (e) { console.warn('Bad share link', e); }
+    if (!data) { try { data = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) {} }
+    if (!data || !Array.isArray(data.items)) return;
+    state.unit = UNITS[data.unit] ? data.unit : 'km';
+    for (const d of data.items) {
+      if (![d.lat, d.lng, d.max].every(Number.isFinite)) continue;
+      addItem({ lat: d.lat, lng: d.lng }, { name: d.name, min: d.min || 0, max: d.max, on: d.on !== false, color: d.color });
+    }
+    colorIdx = state.items.length;
+  }
+
+  function copy(text, msg) {
+    const done = () => toast(msg);
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallback());
+    else fallback();
+    function fallback() {
+      const t = document.createElement('textarea');
+      t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); done(); } catch (e) { window.prompt('Copy:', text); }
+      t.remove();
+    }
+  }
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+  }
+
+  function fitAll() {
+    const g = L.featureGroup([...layers.values()].map((l) => l.ring));
+    if (g.getLayers().length) map.fitBounds(g.getBounds(), { padding: [30, 30] });
+  }
+
+  // ---------- wiring ----------
+  map.on('click', (e) => {
+    if (!$('#addOnClick').checked) return;
+    const it = addItem({ lat: e.latlng.lat, lng: e.latlng.lng });
+    const f = fields.get(it.id);
+    f.el.scrollIntoView({ block: 'nearest' });
+    f.max.focus(); f.max.select();
+  });
+  $('#addOnClick').addEventListener('change', (e) => mapEl.classList.toggle('adding', e.target.checked));
+  $('#addCenter').addEventListener('click', () => {
+    const it = addItem(map.getCenter());
+    const f = fields.get(it.id); f.coord.focus(); f.coord.select();
+  });
+  $('#unit').addEventListener('change', (e) => { state.unit = e.target.value; renderList(); compute(); save(); });
+  $('#fit').addEventListener('click', fitAll);
+  const clearBtn = $('#clear');
+  const disarm = () => { clearBtn.dataset.armed = ''; clearBtn.textContent = 'Clear'; };
+  clearBtn.addEventListener('click', () => {
+    if (!state.items.length) return;
+    if (clearBtn.dataset.armed !== '1') {
+      clearBtn.dataset.armed = '1'; clearBtn.textContent = 'Really clear?';
+      setTimeout(disarm, 2500);
+      return;
+    }
+    state.items.forEach((it) => removeLayer(it.id));
+    state.items = []; colorIdx = 0;
+    disarm();
+    history.replaceState(null, '', location.pathname + location.search);
+    renderList(); compute(); save();
+  });
+  $('#share').addEventListener('click', () => {
+    const hash = '#d=' + btoa(unescape(encodeURIComponent(JSON.stringify(serialize()))));
+    history.replaceState(null, '', hash);
+    copy(location.href, 'Link copied');
+  });
+
+  load();
+  $('#unit').value = state.unit;
+  renderList();
+  compute();
+  if (state.items.length) fitAll();
+})();
+</script>
+</body>
+</html>
