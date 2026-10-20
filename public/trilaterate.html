@@ -75,6 +75,8 @@
   .target::before, .target::after { content: ""; position: absolute; background: var(--c); }
   .target::before { left: 9px; top: -6px; width: 2px; height: 30px; }
   .target::after { top: 9px; left: -6px; height: 2px; width: 30px; }
+  .nextpt { width: 14px; height: 14px; margin: 1px; transform: rotate(45deg); border: 2px dashed var(--c); background: rgba(255,255,255,.8); }
+  .cand.next { border-style: dashed; }
   .lbl { position: absolute; left: 26px; top: 0; font: 700 12px system-ui, sans-serif; color: var(--c); text-shadow: 0 0 3px #fff, 0 0 3px #fff; }
 
   @media (max-width: 760px) {
@@ -94,6 +96,7 @@
   </header>
   <div class="toolbar">
     <label><input type="checkbox" id="addOnClick" checked> Add on map click</label>
+    <label title="Show where to measure from next to shrink the red area the most"><input type="checkbox" id="suggest" checked> Suggest next</label>
     <span class="grow"></span>
     <label>Units
       <select id="unit">
@@ -145,10 +148,18 @@
   // A range that doesn't add up (min > max, max empty or 0) is kept as typed but ignored.
   const isValid = (it) => it.max > 0 && it.min >= 0 && it.min <= it.max;
 
-  // Region allowed by one measurement: a disk (min = 0) or an annulus.
+  const isExact = (it) => it.min === it.max;
+  // An exact distance is a line with no area, so intersect it as a thin band wider than the polygon's chord error.
+  const exactTol = (r) => Math.max(1, r * 5e-4);
+
+  // Region allowed by one measurement: a disk (min = 0), an annulus, or a thin band (min = max).
   function annulus(it) {
+    if (isExact(it)) {
+      const t = exactTol(it.max);
+      return turf.polygon([ringOf(it, it.max + t), ringOf(it, Math.max(it.max - t, 0.1)).slice().reverse()]);
+    }
     const outer = ringOf(it, it.max);
-    if (it.min > 0 && it.min < it.max) return turf.polygon([outer, ringOf(it, it.min).slice().reverse()]);
+    if (it.min > 0) return turf.polygon([outer, ringOf(it, it.min).slice().reverse()]);
     return turf.polygon([outer]);
   }
 
@@ -233,13 +244,13 @@
     l.ring.clearLayers();
     l.ring.options.style = {
       color: it.color, weight: 2, opacity: it.on ? 0.9 : 0.35, dashArray: it.on ? null : '4 6',
-      fillColor: it.color, fillOpacity: it.on ? 0.07 : 0,
+      fillColor: it.color, fillOpacity: it.on && !isExact(it) ? 0.07 : 0,
     };
     if (except !== 'center') l.center.setLatLng([it.lat, it.lng]);
     const valid = isValid(it);
     [l.hMax, l.hMin].forEach((h) => (valid ? h.addTo(map) : h.remove()));
     if (valid) {
-      l.ring.addData(annulus(it));
+      l.ring.addData(isExact(it) ? turf.polygon([ringOf(it, it.max)]) : annulus(it));
       if (except !== 'hMax') l.hMax.setLatLng(ll(dest(it, it.max, it.bMax)).reverse());
       if (except !== 'hMin') l.hMin.setLatLng(ll(dest(it, it.min, it.bMin)).reverse());
     }
@@ -376,6 +387,7 @@
   function compute() {
     regionLayer.clearLayers();
     candidates = [];
+    scheduleSuggest(null);
     const act = state.items.filter((i) => i.on && isValid(i));
 
     if (!act.length) {
@@ -390,8 +402,9 @@
     const parts = region ? lobes(region) : [];
 
     if (act.length === 1) {
-      resultEl.innerHTML = `<h2>Result</h2><p>The target is somewhere on the ${act[0].min > 0 ? 'ring' : 'disk'} around <b>${esc(act[0].name)}</b>.</p>
+      resultEl.innerHTML = `<h2>Result</h2><p>The target is somewhere on the ${isExact(act[0]) ? 'circle' : act[0].min > 0 ? 'ring' : 'disk'} around <b>${esc(act[0].name)}</b>.</p>
         <p class="hint">Add a measurement from another spot to narrow it down.</p>`;
+      if (parts.length) scheduleSuggest(region, act);
       return;
     }
 
@@ -436,6 +449,89 @@
     resultEl.innerHTML = head + candidates.map((c, i) => candHtml(i,
       candidates.length > 1 ? `Area ${String.fromCharCode(65 + i)} · ${Math.round(100 * c.area / total)}% of total` : 'Best estimate',
       c, `± ${fmtDist(c.radius)} · area ${fmtArea(c.area)}`)).join('');
+    scheduleSuggest(region, act);
+  }
+
+  // ---------- next-point suggestion ----------
+  // Treat a grid of points covering the red area as equally likely target positions. For each candidate
+  // spot around it, simulate measuring from there (with the same relative precision as the current
+  // measurements) and estimate what share of the area would survive; suggest the spot that leaves the least.
+  const suggestLayer = L.layerGroup().addTo(map);
+  let suggestion = null, suggestTimer;
+
+  function scheduleSuggest(region, act) {
+    clearTimeout(suggestTimer);
+    suggestLayer.clearLayers();
+    suggestion = null;
+    if (!region || !$('#suggest').checked) return;
+    // Debounced: too heavy to run on every drag frame.
+    suggestTimer = setTimeout(() => { suggestion = suggestNext(region, act); showSuggestion(); }, 250);
+  }
+
+  function samplePoints(region, want = 400) {
+    const [w, s, e, n] = turf.bbox(region);
+    let N = 30, pts = [];
+    for (let pass = 0; pass < 3 && pts.length < want / 2; pass++) {
+      pts = [];
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const p = [w + (e - w) * (i + 0.5) / N, s + (n - s) * (j + 0.5) / N];
+        if (turf.booleanPointInPolygon(p, region)) pts.push({ lng: p[0], lat: p[1] });
+      }
+      N = Math.min(120, Math.ceil(N * Math.sqrt(want / Math.max(pts.length, 1))));
+    }
+    // Very thin areas (exact distances) slip between grid points; their outline traces them well enough.
+    if (pts.length < want / 4) pts = turf.coordAll(region).map(([lng, lat]) => ({ lat, lng }));
+    return pts;
+  }
+
+  const median = (xs) => { const a = [...xs].sort((x, y) => x - y), m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+  // Index of the first element of sorted `a` that is > x (upper=true) or >= x.
+  const bound = (a, x, upper) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (upper ? a[m] <= x : a[m] < x) lo = m + 1; else hi = m; } return lo; };
+
+  function suggestNext(region, act) {
+    const pts = samplePoints(region);
+    if (pts.length < 10) return null;
+    const rel = Math.min(0.5, median(act.map((i) => (i.max - i.min) / (i.max + i.min))));
+    const [lng, lat] = turf.centerOfMass(region).geometry.coordinates;
+    const center = { lat, lng };
+    const extent = Math.max(...pts.map((p) => distM(center, p)), 10);
+    let best = null;
+    // Nearer rings first, so ties go to the spot that is easier to reach.
+    for (const k of [1.5, 3, 6]) for (let brg = 0; brg < 360; brg += 15) {
+      const c = dest(center, extent * k, brg);
+      const D = pts.map((p) => distM(c, p));
+      const sorted = Float64Array.from(D).sort();
+      let kept = 0;
+      for (const d of D) { const h = Math.max(rel * d, 1); kept += bound(sorted, d + h, true) - bound(sorted, d - h, false); }
+      const frac = kept / (D.length * D.length);
+      if (!best || frac < best.frac - 1e-3) best = { lat: c.lat, lng: c.lng, frac };
+    }
+    return { ...best, dist: distM(best, center), rel };
+  }
+
+  function showSuggestion() {
+    suggestLayer.clearLayers();
+    document.getElementById('next')?.remove();
+    const s = suggestion;
+    if (!s) return;
+    const gain = Math.round((1 - s.frac) * 100);
+    L.marker([s.lat, s.lng], { icon: icon('nextpt', '#1d1d1f'), zIndexOffset: 200, title: 'Suggested next measurement' })
+      .bindPopup(`Suggested next measurement<br><code>${fmtCoord(s)}</code><br>should rule out ~${gain}% of the red area`)
+      .addTo(suggestLayer);
+    const el = document.createElement('div');
+    el.id = 'next';
+    el.className = 'cand next';
+    el.innerHTML = `
+      <b>◇ Suggested next measurement</b>
+      <span class="coords">${fmtCoord(s)}</span>
+      <span class="meta">${fmtDist(s.dist)} from the red area's centre · should rule out ~${gain}% of it
+        (assuming ±${Math.round(s.rel * 100)}% precision, like your current ranges)</span>
+      <div class="btns">
+        <button data-next="zoom">Show</button>
+        <button data-next="copy">Copy coords</button>
+        <button data-next="add">Add point here</button>
+      </div>`;
+    resultEl.appendChild(el);
   }
 
   const esc = (s) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
@@ -454,6 +550,19 @@
   resultEl.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.next && suggestion) {
+      const s = suggestion;
+      if (b.dataset.next === 'zoom') map.panTo([s.lat, s.lng]);
+      if (b.dataset.next === 'copy') copy(fmtCoord(s), 'Coordinates copied');
+      if (b.dataset.next === 'add') {
+        // Range left empty: the point stays hidden until the measured distance is typed in.
+        const it = addItem(s, { min: NaN, max: NaN });
+        const f = fields.get(it.id);
+        f.el.scrollIntoView({ block: 'nearest' });
+        f.min.focus();
+      }
+      return;
+    }
     const c = candidates[b.dataset.zoom ?? b.dataset.copy];
     if (!c) return;
     if (b.dataset.zoom !== undefined) {
@@ -521,6 +630,7 @@
     f.el.scrollIntoView({ block: 'nearest' });
     f.max.focus(); f.max.select();
   });
+  $('#suggest').addEventListener('change', compute);
   $('#addOnClick').addEventListener('change', (e) => mapEl.classList.toggle('adding', e.target.checked));
   $('#addCenter').addEventListener('click', () => {
     const it = addItem(map.getCenter());
