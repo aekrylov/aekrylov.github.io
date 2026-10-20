@@ -142,6 +142,9 @@
   };
   const ringOf = (it, r) => turf.circle(ll(it), r / 1000, { steps: STEPS, units: 'kilometers' }).geometry.coordinates[0];
 
+  // A range that doesn't add up (min > max, max empty or 0) is kept as typed but ignored.
+  const isValid = (it) => it.max > 0 && it.min >= 0 && it.min <= it.max;
+
   // Region allowed by one measurement: a disk (min = 0) or an annulus.
   function annulus(it) {
     const outer = ringOf(it, it.max);
@@ -151,7 +154,7 @@
 
   // ---------- formatting ----------
   const k = () => UNITS[state.unit];
-  const fmtNum = (m) => +(m / k()).toFixed(state.unit === 'm' ? 1 : 4);
+  const fmtNum = (m) => (Number.isFinite(m) ? +(m / k()).toFixed(state.unit === 'm' ? 1 : 4) : '');
   const fmtCoord = (p) => `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
   function fmtDist(m) {
     if (state.unit === 'mi') return m < 160.9344 ? `${Math.round(m / 0.3048)} ft` : `${(m / 1609.344).toFixed(2)} mi`;
@@ -232,10 +235,14 @@
       color: it.color, weight: 2, opacity: it.on ? 0.9 : 0.35, dashArray: it.on ? null : '4 6',
       fillColor: it.color, fillOpacity: it.on ? 0.07 : 0,
     };
-    if (it.max > 0) l.ring.addData(annulus(it));
     if (except !== 'center') l.center.setLatLng([it.lat, it.lng]);
-    if (except !== 'hMax') l.hMax.setLatLng(ll(dest(it, it.max, it.bMax)).reverse());
-    if (except !== 'hMin') l.hMin.setLatLng(ll(dest(it, it.min, it.bMin)).reverse());
+    const valid = isValid(it);
+    [l.hMax, l.hMin].forEach((h) => (valid ? h.addTo(map) : h.remove()));
+    if (valid) {
+      l.ring.addData(annulus(it));
+      if (except !== 'hMax') l.hMax.setLatLng(ll(dest(it, it.max, it.bMax)).reverse());
+      if (except !== 'hMin') l.hMin.setLatLng(ll(dest(it, it.min, it.bMin)).reverse());
+    }
     syncFields(it);
     scheduleCompute();
   }
@@ -245,10 +252,10 @@
     if (!f) return;
     const active = document.activeElement;
     if (active !== f.coord) { f.coord.value = fmtCoord(it); f.coord.classList.remove('bad'); }
-    if (active !== f.min && active !== f.max) {
-      f.min.value = fmtNum(it.min); f.max.value = fmtNum(it.max);
-      f.min.classList.remove('bad'); f.max.classList.remove('bad');
-    }
+    if (active !== f.min && active !== f.max) { f.min.value = fmtNum(it.min); f.max.value = fmtNum(it.max); }
+    const bad = !isValid(it);
+    f.min.classList.toggle('bad', bad); f.max.classList.toggle('bad', bad);
+    f.min.title = f.max.title = bad ? 'Not used until min ≤ max' : '';
     f.el.classList.toggle('off', !it.on);
   }
 
@@ -290,20 +297,20 @@
       coord.addEventListener('change', () => syncFields(it));
 
       const onRange = () => {
-        const mn = min.value.trim() === '' ? 0 : parseFloat(min.value);
-        const mx = parseFloat(max.value);
-        const ok = isFinite(mx) && mx > 0 && isFinite(mn) && mn >= 0 && mn <= mx;
-        min.classList.toggle('bad', !ok); max.classList.toggle('bad', !ok);
-        if (ok) { it.min = mn * k(); it.max = mx * k(); refreshItem(it); }
+        it.min = min.value.trim() === '' ? 0 : parseFloat(min.value) * k();
+        it.max = parseFloat(max.value) * k();
+        refreshItem(it);
       };
       min.addEventListener('input', onRange); max.addEventListener('input', onRange);
-      [min, max].forEach((x) => x.addEventListener('change', () => syncFields(it)));
 
       el.addEventListener('click', (e) => {
         const a = e.target.closest('button')?.dataset.a;
         if (a === 'del') { state.items = state.items.filter((x) => x !== it); removeLayer(it.id); renderList(); scheduleCompute(); }
         if (a === 'toggle') { it.on = !it.on; renderList(); refreshItem(it); }
-        if (a === 'zoom') map.fitBounds(layers.get(it.id).ring.getBounds(), { padding: [30, 30] });
+        if (a === 'zoom') {
+          if (isValid(it)) map.fitBounds(layers.get(it.id).ring.getBounds(), { padding: [30, 30] });
+          else map.panTo([it.lat, it.lng]);
+        }
       });
 
       fields.set(it.id, { el, coord, min, max });
@@ -369,7 +376,7 @@
   function compute() {
     regionLayer.clearLayers();
     candidates = [];
-    const act = state.items.filter((i) => i.on && i.max > 0);
+    const act = state.items.filter((i) => i.on && isValid(i));
 
     if (!act.length) {
       resultEl.innerHTML = '<h2>Result</h2><p class="hint">Add measurements to locate the target.</p>';
@@ -475,8 +482,11 @@
     if (!data || !Array.isArray(data.items)) return;
     state.unit = UNITS[data.unit] ? data.unit : 'km';
     for (const d of data.items) {
-      if (![d.lat, d.lng, d.max].every(Number.isFinite)) continue;
-      addItem({ lat: d.lat, lng: d.lng }, { name: d.name, min: d.min || 0, max: d.max, on: d.on !== false, color: d.color });
+      if (![d.lat, d.lng].every(Number.isFinite)) continue;
+      addItem({ lat: d.lat, lng: d.lng }, {
+        name: d.name, min: Number.isFinite(d.min) ? d.min : 0, max: Number.isFinite(d.max) ? d.max : NaN,
+        on: d.on !== false, color: d.color,
+      });
     }
     colorIdx = state.items.length;
   }
@@ -499,7 +509,7 @@
   }
 
   function fitAll() {
-    const g = L.featureGroup([...layers.values()].map((l) => l.ring));
+    const g = L.featureGroup(state.items.map((it) => layers.get(it.id)).filter((l) => l && l.ring.getLayers().length).map((l) => l.ring));
     if (g.getLayers().length) map.fitBounds(g.getBounds(), { padding: [30, 30] });
   }
 
